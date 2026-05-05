@@ -1,0 +1,24 @@
+# secdata-scrapers requirements
+
+# HTTP and parsing
+requests>=2.31.0
+beautifulsoup4>=4.12.0
+lxml>=4.9.0          # faster HTML parser
+
+# Configuration
+PyYAML>=6.0
+
+# Progress bars
+tqdm>=4.65.0
+
+# PDF parsing (academic papers, NIST docs)
+pdfplumber>=0.10.0
+
+# RSS feeds
+feedparser>=6.0.0
+
+# Stack Exchange dump archive
+py7zr>=0.20.0
+
+# Optional: explicit XML parsing (built-in xml.etree works too)
+# defusedxml>=0.7.1
