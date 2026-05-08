@@ -1,4 +1,5 @@
 import time, requests
+from datetime import datetime
 from tqdm import tqdm
 from utils import append_jsonl, load_checkpoint, save_checkpoint, SESSION, safe_get
 
@@ -60,7 +61,7 @@ def run(cfg, raw_file, checkpoint_file):
     per_page = min(c.get("results_per_page", 2000), 2000)
     cp = load_checkpoint(checkpoint_file)
     done_years = set(cp.get("nvd_done_years", []))
-    for year in range(c.get("start_year", 2010), c.get("end_year", 2025) + 1):
+    for year in range(c.get("start_year", 2010), c.get("end_year", datetime.now().year) + 1):
         if str(year) in done_years:
             continue
         pub_start = f"{year}-01-01T00:00:00.000"

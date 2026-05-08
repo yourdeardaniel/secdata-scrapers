@@ -20,7 +20,7 @@ from urllib.parse import urlparse
 
 USER_AGENT = (
     "secdata-scraper/1.0 "
-    "(+https://github.com/your-username/secdata-scrapers research)"
+    "(+https://github.com/yourdeardaniel/secdata-scrapers research)"
 )
 
 # ── Audit log ─────────────────────────────────────────────────────

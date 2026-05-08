@@ -303,6 +303,13 @@ def parse_chromium_issue(issue):
 
 
 def run_chromium(cfg, raw_file, checkpoint_file):
+    """
+    NOTE: Google migrated its Monorail tracker to issues.chromium.org in
+    2024-2025. If the Monorail API returns 503/404, the scraper falls
+    back to scraping the web UI, which may also fail post-migration.
+    If both methods fail, the scraper logs a warning and continues
+    with other sources. Output may be empty for this source.
+    """
     c = cfg["scrapers"]["bugzilla_chromium"]
     if not c.get("enabled", True):
         print("[chromium] Disabled.")

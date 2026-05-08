@@ -7,6 +7,7 @@ Academic papers — full text scraper:
   - NDSS: fully open access PDFs
 """
 import io
+from datetime import datetime
 import os
 import time
 import requests
@@ -212,7 +213,7 @@ def run_usenix(cfg, raw_file, checkpoint_file):
 
     delay     = c.get("delay_seconds", 2.0)
     start_yr  = c.get("start_year", 2010)
-    end_yr    = c.get("end_year", 2024)
+    end_yr    = c.get("end_year", datetime.now().year)
 
     cp       = load_checkpoint(checkpoint_file)
     done_ids = set(cp.get("usenix_done", []))
@@ -326,7 +327,7 @@ def run_ndss(cfg, raw_file, checkpoint_file):
 
     delay    = c.get("delay_seconds", 2.0)
     start_yr = c.get("start_year", 2010)
-    end_yr   = c.get("end_year", 2024)
+    end_yr   = c.get("end_year", datetime.now().year)
 
     cp       = load_checkpoint(checkpoint_file)
     done_ids = set(cp.get("ndss_done", []))
@@ -423,7 +424,7 @@ def run_ieee_sp(cfg, raw_file, checkpoint_file):
 
     delay    = c.get("delay_seconds", 3.0)
     start_yr = c.get("start_year", 2015)
-    end_yr   = c.get("end_year", 2024)
+    end_yr   = c.get("end_year", datetime.now().year)
 
     cp       = load_checkpoint(checkpoint_file)
     done_ids = set(cp.get("ieee_sp_done", []))
@@ -499,7 +500,7 @@ def run_acm_ccs(cfg, raw_file, checkpoint_file):
 
     delay    = c.get("delay_seconds", 3.0)
     start_yr = c.get("start_year", 2015)
-    end_yr   = c.get("end_year", 2024)
+    end_yr   = c.get("end_year", datetime.now().year)
 
     cp       = load_checkpoint(checkpoint_file)
     done_ids = set(cp.get("acm_ccs_done", []))

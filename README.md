@@ -5,7 +5,7 @@ Collects raw cybersecurity research documents from **192 public sources** (143 s
 **Requires Python 3.9 or newer.** Tested on 3.9, 3.10, 3.11, 3.12.
 
 **This tool collects raw text. It does not generate training examples.**
-For the conversion pipeline, see [secdata-pipeline](https://github.com/your-username/secdata-pipeline).
+For the conversion pipeline, see [secdata-pipeline](https://github.com/yourdeardaniel/secdata-pipeline).
 
 ---
 
@@ -33,7 +33,7 @@ Full source list: `python3 main.py --estimate`
 
 ```bash
 # 1. Clone and install
-git clone https://github.com/your-username/secdata-scrapers
+git clone https://github.com/yourdeardaniel/secdata-scrapers
 cd secdata-scrapers
 pip install -r requirements.txt
 
@@ -105,6 +105,62 @@ bash scripts/transfer_receive.sh IP 8888 raw    # on H100
 ```
 
 ---
+
+---
+
+## Known issues and likely failures
+
+This scraper hits 192 different sources. Some will fail during your run.
+The pipeline is designed to handle this gracefully — failures are logged
+and the scraper continues — but you should know what to expect.
+
+### Likely to fail or produce few results
+
+| Source | Issue | What to do |
+|---|---|---|
+| `--mozilla` (Bugzilla) | Mozilla rate-limits aggressively | Increase `delay_seconds` in config |
+| `--chromium` | Google migrated tracker to issues.chromium.org in 2024-2025 | Skip if it returns zero results — Chromium CVEs are still in NVD |
+| `--p0-issues` | Same migration as Chromium | Skip if zero results — P0 blog (`--p0`) is unaffected |
+| `--cisa` | CISA changed CMS in 2023 | Some advisory URLs may 404; the recent ones still work |
+| `--certcc` | CERT/CC API may have changed format | If parsing fails, file an issue |
+| Personal blogs (13Cubed, Orange Tsai, Quarkslab) | Site redesigns break CSS selectors | Manual fix needed if zero results |
+
+### Sources that always work (high reliability)
+
+- All MITRE sources (ATT&CK, CAPEC, D3FEND, CWE)
+- NVD
+- GitHub Advisories (with token)
+- Stack Exchange dumps
+- arXiv abstracts
+- All Git-based sources (YARA, Sigma, Atomic Red Team, etc.)
+- OWASP repositories
+- Linux kernel commits
+
+### Diagnosing failures
+
+If a scraper returns zero documents, check the audit log:
+
+```bash
+tail -100 data/audit/scrape_audit.log | grep SKIPPED
+```
+
+Common reasons:
+- `robots_disallowed` — the site asked us not to scrape that path
+- `blocked_domain` — the domain is on the ToS-restricted list
+- `pre_filter:operational_attack_content` — content was caught by safety filter
+- `pre_filter:too_short` — page returned no content
+
+If you see consistent HTTP errors for one source, the site likely changed
+its structure and the scraper needs updating.
+
+### Sources you should skip if compute-constrained
+
+If you have limited disk space or want a smaller initial dataset:
+- Skip `--gh-repos-deep` — 5,000 repos, ~25GB disk, ~5 days runtime
+- Skip `--kernel` — 200K commits, ~4GB, ~4 days runtime
+- Skip `--se-dumps` for stackoverflow — 80GB additional download
+- Disable in `config.yaml` rather than removing scraper code
+
 
 ## License
 

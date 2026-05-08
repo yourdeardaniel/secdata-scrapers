@@ -7,7 +7,7 @@ the tool could be used to bypass robots.txt checking, a credential leakage
 bug in the audit logger, or a path traversal in file handling — please report
 it responsibly rather than opening a public issue.
 
-**To report:** Email [your-email@example.com] with subject "secdata-scrapers security"
+**To report:** Email [yourdearestdaniel@gmail.com] with subject "secdata-scrapers security"
 
 Include:
 - Description of the issue

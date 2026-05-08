@@ -1,4 +1,5 @@
 import io, os, time, requests, xml.etree.ElementTree as ET
+from datetime import datetime
 from bs4 import BeautifulSoup
 from tqdm import tqdm
 from utils import (
@@ -347,7 +348,7 @@ def run_msrc(cfg, raw_file, checkpoint_file):
     c = cfg["scrapers"]["msrc"]
     if not c.get("enabled", True): print("[msrc] Disabled."); return
     start_yr = c.get("start_year", 2016)
-    end_yr = c.get("end_year", 2025)
+    end_yr = c.get("end_year", datetime.now().year)
     delay = c.get("delay_seconds", 1.0)
     BASE = "https://api.msrc.microsoft.com/cvrf/v3.0"
     cp = load_checkpoint(checkpoint_file)

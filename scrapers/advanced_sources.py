@@ -605,6 +605,14 @@ def run_p0_issue_tracker(cfg, raw_file, checkpoint_file):
     Shows the raw vulnerability research process: initial report,
     PoC development, vendor interaction, exploitation development.
     Complements the polished blog posts with working research artifacts.
+
+    NOTE: Google migrated its Monorail tracker to issues.chromium.org in
+    2024-2025. The bugs.chromium.org URLs may redirect or 404. If this
+    scraper returns zero results, the issue tracker URL has moved.
+    Check https://bugs.chromium.org/p/project-zero/issues/list manually
+    and update BASE in this function. The core P0 blog content (run via
+    --p0 flag in advanced sources) is unaffected and remains the primary
+    source — the issue tracker is a supplemental data source.
     """
     c = cfg["scrapers"].get("p0_issue_tracker", {})
     if not c.get("enabled", True): return
