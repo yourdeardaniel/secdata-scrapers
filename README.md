@@ -44,19 +44,23 @@ nano config.yaml   # add your GitHub token (free: github.com/settings/tokens)
 # 3. Read the ethical use guidelines
 cat ETHICAL_USE.md
 
-# 4. Run fast sources first (~2 hours)
-python main.py --fast
+# 4. Activate the virtual environment (do this every time you SSH in)
+source venv/bin/activate
 
-# 5. Check progress
-python main.py --stats
+# 5. Run fast sources first (~2 hours)
+python3 main.py --fast
 
-# 6. Run Stack Exchange dumps (highest ROI, auto-downloads)
-python main.py --se-dumps
+# 6. Check progress
+python3 main.py --stats
 
-# 7. Run everything else (takes weeks, use tmux)
+# 7. Run Stack Exchange dumps (highest ROI, auto-downloads)
+python3 main.py --se-dumps
+
+# 8. Run everything else (takes weeks, use tmux)
 tmux new -s scrape
-python main.py --nvd --ctftime --github --hackerone --exploitdb
-python main.py --gh-repos-deep --kernel --arxiv-full
+source venv/bin/activate
+python3 main.py --nvd --ctftime --github --hackerone --exploitdb
+python3 main.py --gh-repos-deep --kernel --arxiv-full
 ```
 
 ---

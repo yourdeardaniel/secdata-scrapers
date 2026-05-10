@@ -215,7 +215,21 @@ def parse_sigma_file(fpath, repo_name):
         import json
         text_parts.append(f"\nDetection logic:\n{json.dumps(detection, indent=2)[:1500]}")
     if references:
-        text_parts.append(f"\nReferences:\n" + "\n".join(f"  - {r}" for r in references[:5]))
+        # Normalize references — YAML files in the wild can have it as
+        # a list, a dict, or a single string. Coerce to a list of strings.
+        if isinstance(references, dict):
+            ref_list = list(references.values())
+        elif isinstance(references, str):
+            ref_list = [references]
+        elif isinstance(references, list):
+            ref_list = references
+        else:
+            ref_list = []
+        if ref_list:
+            text_parts.append(
+                "\nReferences:\n" +
+                "\n".join(f"  - {r}" for r in ref_list[:5])
+            )
 
     return {
         "source":     "sigma_rule",
