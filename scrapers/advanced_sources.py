@@ -55,7 +55,7 @@ def clone_many(repos, source, raw_file, checkpoint_file, cp_key):
     all_docs = []
     for repo_url, dest, label in repos:
         if clone_repo(repo_url, dest):
-            all_docs.extend(extract_md(dest, source, repo_url, label))
+            all_docs.extend(extract_md_files(dest, source, repo_url, label))
     if all_docs:
         for i in range(0, len(all_docs), 500):
             append_jsonl(raw_file, all_docs[i:i+500])
