@@ -46,6 +46,31 @@ Bulk access requires authentication.
 
 ---
 
+### OSV — returns 0 documents per ecosystem
+**Status:** All 9 OSV ecosystems return 0 vulnerabilities (PyPI, npm,
+Go, Maven, RubyGems, crates.io, NuGet, Packagist, Linux).
+
+**Cause:** The scraper calls `POST /v1/query` with just `{"ecosystem": "PyPI"}`
+which is the wrong API usage. The `/v1/query` endpoint is designed for
+specific package lookups (e.g. "vulns affecting django"), not bulk
+ecosystem listings. OSV silently returns empty results for invalid queries.
+
+**To fix:** Rewrite `scrapers/osv.py` to use the OSV bulk download bucket:
+- Each ecosystem has a downloadable ZIP at
+  `https://osv-vulnerabilities.storage.googleapis.com/{ecosystem}/all.zip`
+- e.g. `https://osv-vulnerabilities.storage.googleapis.com/PyPI/all.zip`
+- Extract the JSON files from each ZIP
+- Parse with the existing `parse_vuln()` function (that part still works)
+
+**Priority:** Low. OSV's data overlaps ~80% with NVD + GHSA which are
+already scraped. The unique content is ~5-10K Linux distro advisories
+and OSS-Fuzz findings.
+
+**Estimated yield if fixed:** ~30-50K additional documents (most
+duplicating NVD/GHSA after dedup).
+
+---
+
 ## Configuration improvements
 
 ### Unix.SE security filter too narrow
