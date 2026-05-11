@@ -9,7 +9,7 @@ def fetch_page(params, api_key=None):
     headers = {"apiKey": api_key} if api_key else {}
     for attempt in range(3):
         try:
-            r = safe_get(NVD_BASE, params=params, headers=headers, timeout=30)
+            r = safe_get(NVD_BASE, source="nvd", params=params, headers=headers, timeout=30)
             if r.status_code in (403, 503):
                 time.sleep(30); continue
             r.raise_for_status()

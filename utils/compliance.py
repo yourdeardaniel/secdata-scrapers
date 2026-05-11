@@ -76,10 +76,18 @@ def can_fetch(url: str) -> bool:
     """
     Check robots.txt for the given URL.
     Caches per-domain. Defaults to True if robots.txt unreachable.
+
+    Hosts in API_ENDPOINT_ALLOWLIST bypass robots.txt because they are
+    authorized via API keys/ToS rather than crawler conventions.
     """
     parsed = urlparse(url)
     if not parsed.scheme or not parsed.netloc:
         return False
+
+    # Bypass robots.txt for known-authorized API endpoints
+    if parsed.netloc in API_ENDPOINT_ALLOWLIST:
+        return True
+
     domain = f"{parsed.scheme}://{parsed.netloc}"
 
     with _robots_lock:
@@ -137,6 +145,19 @@ MINIMUM_DELAYS = {
     "research.nccgroup.com":    1.5,
     "googleprojectzero.blogspot.com": 2.0,
     "blog.trailofbits.com":     1.5,
+}
+
+# Known-authorized API endpoints — hosts that provide an official API
+# governed by API keys/ToS rather than robots.txt. These bypass robots.txt
+# but still respect per-domain rate limits in MINIMUM_DELAYS.
+API_ENDPOINT_ALLOWLIST = {
+    "services.nvd.nist.gov",   # NVD CVE API (api keys at nvd.nist.gov)
+    "api.github.com",          # GitHub API (PAT-authorized)
+    "api.osv.dev",             # OSV vulnerability API (public, free)
+    "otx.alienvault.com",      # AlienVault OTX (API key-authorized)
+    "api.stackexchange.com",   # Stack Exchange API (key-authorized)
+    "export.arxiv.org",        # arXiv API (formally documented as OK)
+    "api.msrc.microsoft.com",  # MSRC API (public, documented)
 }
 
 DEFAULT_MIN_DELAY = 0.5
