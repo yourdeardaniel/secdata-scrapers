@@ -283,23 +283,35 @@ def parse_html(content) -> BeautifulSoup:
 def extract_pdf_text(content_bytes: bytes, max_pages: int = 50) -> str:
     """
     Extract text from a PDF byte-string.
-    Returns empty string on failure (some PDFs are images, encrypted, etc.).
+
+    Robust to malformed pages (e.g. bad font metadata) — one broken page
+    doesn't kill the whole PDF. Silences pdfminer's verbose warnings.
+    Returns empty string on total failure (encrypted, image-only, etc.).
     """
     try:
         import pdfplumber
+        import logging
+        # Silence noisy pdfminer warnings (FontBBox, encoding, etc.)
+        logging.getLogger("pdfminer").setLevel(logging.ERROR)
+        logging.getLogger("pdfplumber").setLevel(logging.ERROR)
     except ImportError:
         return ""
 
+    parts = []
     try:
         with pdfplumber.open(io.BytesIO(content_bytes)) as pdf:
-            parts = []
             for page in pdf.pages[:max_pages]:
-                t = page.extract_text()
-                if t:
-                    parts.append(t)
-            return "\n".join(
-                line for line in "\n".join(parts).split("\n")
-                if len(line.strip()) > 2
-            )
+                try:
+                    t = page.extract_text()
+                    if t:
+                        parts.append(t)
+                except Exception:
+                    # Skip individual broken pages
+                    continue
     except Exception:
         return ""
+
+    return "\n".join(
+        line for line in "\n".join(parts).split("\n")
+        if len(line.strip()) > 2
+    )
