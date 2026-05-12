@@ -66,8 +66,11 @@ def get_security_commits(dest, keywords, max_commits):
         "-i",  # case insensitive grep
     ] + grep_args + [f"--max-count={max_commits}"]
 
+    # NOTE: cmd already contains `-C dest`, so do NOT also pass cwd=dest;
+    # that resolves the path twice and fails with
+    # "fatal: cannot change to './data/kernel/linux'".
     result = subprocess.run(cmd, capture_output=True, text=True,
-                            timeout=300, cwd=dest)
+                            timeout=300)
     if result.returncode != 0:
         print(f"[kernel] git log failed: {result.stderr[:200]}")
         return []
