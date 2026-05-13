@@ -458,8 +458,33 @@ def run_vendor_advisories(cfg, raw_file, checkpoint_file):
                     usn   = n.get("id", "")
                     title = n.get("title", "") or ""
                     desc  = n.get("description", "") or n.get("summary", "") or ""
-                    cves  = n.get("cves", []) or []
-                    pkgs  = list((n.get("packages") or {}).keys())[:10]
+                    # Ubuntu's API used to return CVEs as a list of strings;
+                    # newer versions return a list of dicts like {"id": "CVE-..."}.
+                    # Normalize to strings so .join doesn't crash.
+                    raw_cves = n.get("cves", []) or []
+                    cves = []
+                    for c_entry in raw_cves:
+                        if isinstance(c_entry, str):
+                            cves.append(c_entry)
+                        elif isinstance(c_entry, dict):
+                            cve_id = c_entry.get("id") or c_entry.get("cve") or ""
+                            if cve_id:
+                                cves.append(cve_id)
+                    # Packages may also be a list of dicts in newer responses.
+                    raw_pkgs = n.get("packages") or {}
+                    if isinstance(raw_pkgs, dict):
+                        pkgs = list(raw_pkgs.keys())[:10]
+                    elif isinstance(raw_pkgs, list):
+                        pkgs = []
+                        for p in raw_pkgs[:10]:
+                            if isinstance(p, str):
+                                pkgs.append(p)
+                            elif isinstance(p, dict):
+                                pkg_name = p.get("name") or p.get("package") or ""
+                                if pkg_name:
+                                    pkgs.append(pkg_name)
+                    else:
+                        pkgs = []
                     if len(desc) < 40:
                         continue
                     parts = [f"Ubuntu Security Notice: {usn}", f"Title: {title}"]

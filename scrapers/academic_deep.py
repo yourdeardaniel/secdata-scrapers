@@ -73,6 +73,11 @@ def search_arxiv(query, start, max_results, max_attempts=5):
     """
     Query the arXiv API. Handles 429 rate limits with exponential backoff
     and 503 transient errors with linear backoff. Returns XML text or None.
+
+    arXiv aggressively rate-limits IPs that have made bursts of failed
+    requests, so initial backoff starts at 5 minutes. This is by design —
+    once we hit our first 429, we wait the cooldown out rather than
+    fighting the throttle.
     """
     params = {
         "search_query": f"cat:cs.CR AND ({query})",
@@ -81,26 +86,26 @@ def search_arxiv(query, start, max_results, max_attempts=5):
         "sortBy":       "submittedDate",
         "sortOrder":    "descending",
     }
-    backoff = 30  # seconds, doubles on each 429
+    backoff = 300  # 5 min initial; doubles to 10 min, 20 min, then caps
     for attempt in range(1, max_attempts + 1):
         try:
             r = SESSION.get(ARXIV_API, params=params,
-                            headers=ARXIV_HEADERS, timeout=30)
+                            headers=ARXIV_HEADERS, timeout=60)
             if r.status_code == 429:
                 print(f"[arxiv_full] 429 (attempt {attempt}/{max_attempts}), "
                       f"sleeping {backoff}s...")
                 time.sleep(backoff)
-                backoff = min(backoff * 2, 600)  # cap at 10 minutes
+                backoff = min(backoff * 2, 1800)  # cap at 30 minutes
                 continue
             if r.status_code == 503:
-                print(f"[arxiv_full] 503 transient, sleeping 60s...")
-                time.sleep(60)
+                print(f"[arxiv_full] 503 transient, sleeping 120s...")
+                time.sleep(120)
                 continue
             r.raise_for_status()
             return r.text
         except requests.exceptions.RequestException as e:
             print(f"[arxiv_full] Request failed (attempt {attempt}): {e}")
-            time.sleep(10 * attempt)
+            time.sleep(30 * attempt)
         except Exception as e:
             print(f"[arxiv_full] Unexpected error: {e}")
             return None
