@@ -348,46 +348,62 @@ def run_msrc(cfg, raw_file, checkpoint_file):
     c = cfg["scrapers"]["msrc"]
     if not c.get("enabled", True): print("[msrc] Disabled."); return
     start_yr = c.get("start_year", 2016)
-    end_yr = c.get("end_year", datetime.now().year)
-    delay = c.get("delay_seconds", 1.0)
-    BASE = "https://api.msrc.microsoft.com/cvrf/v3.0"
+    end_yr   = c.get("end_year", datetime.now().year)
+    delay    = c.get("delay_seconds", 1.0)
+    BASE     = "https://api.msrc.microsoft.com/cvrf/v3.0"
+    # MSRC's CVRF API uses three-letter month abbreviations in update IDs
+    # (e.g. "2024-Jan"), not zero-padded numbers ("2024-01"). Hitting the
+    # numeric form returns 404 for every month → zero docs.
+    MONTH_ABBREV = ["Jan", "Feb", "Mar", "Apr", "May", "Jun",
+                    "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"]
     cp = load_checkpoint(checkpoint_file)
     done_updates = set(cp.get("msrc_done_updates", []))
+    total_docs = 0
     for year in range(start_yr, end_yr + 1):
-        for month in range(1, 13):
-            update_id = f"{year}-{month:02d}"
-            if update_id in done_updates: continue
+        for month_idx, mon in enumerate(MONTH_ABBREV, start=1):
+            # Skip future months in the current year.
+            if year == datetime.now().year and month_idx > datetime.now().month:
+                continue
+            update_id = f"{year}-{mon}"
+            if update_id in done_updates:
+                continue
             try:
-                r = SESSION.get(f"{BASE}/updates/{update_id}",
+                # /cvrf/{id} returns the full CVRF document with Vulnerability
+                # entries. /updates/{id} returns only metadata (no vulns) —
+                # using it here was the original bug.
+                r = SESSION.get(f"{BASE}/cvrf/{update_id}",
                     headers={"Accept": "application/json"}, timeout=20)
                 if r.status_code == 404:
+                    # Month not yet published or never existed.
                     done_updates.add(update_id); continue
                 r.raise_for_status()
                 data = r.json()
-            except Exception:
+            except Exception as e:
+                print(f"[msrc] {update_id} failed: {e}")
                 time.sleep(5); continue
+            month_count = 0
             for vuln in (data.get("Vulnerability") or []):
-                cve = vuln.get("CVE","")
+                cve = vuln.get("CVE", "")
                 if not cve: continue
                 title_obj = vuln.get("Title") or {}
-                title = title_obj.get("Value","") if isinstance(title_obj,dict) else str(title_obj)
+                title = title_obj.get("Value", "") if isinstance(title_obj, dict) else str(title_obj)
                 notes = vuln.get("Notes") or []
                 desc = faq = ""
                 for note in notes:
-                    ntype = note.get("Type",0)
-                    nval = note.get("Value","") or ""
+                    ntype = note.get("Type", 0)
+                    nval  = note.get("Value", "") or ""
                     if ntype == 1: desc = nval
                     elif ntype == 7: faq = nval
                 if not desc and not faq: continue
                 threats = vuln.get("Threats") or []
                 impact = severity = ""
                 for t in threats:
-                    ttype = t.get("Type",-1)
-                    tdesc = (t.get("Description") or {}).get("Value","")
+                    ttype = t.get("Type", -1)
+                    tdesc = (t.get("Description") or {}).get("Value", "")
                     if ttype == 0: impact = tdesc
                     if ttype == 3: severity = tdesc
                 cvss_sets = vuln.get("CVSSScoreSets") or []
-                cvss = str(cvss_sets[0].get("BaseScore","")) if cvss_sets else ""
+                cvss = str(cvss_sets[0].get("BaseScore", "")) if cvss_sets else ""
                 parts = [f"Microsoft Security Advisory: {cve}"]
                 if title: parts.append(f"Title: {title}")
                 if severity: parts.append(f"Severity: {severity}")
@@ -398,11 +414,15 @@ def run_msrc(cfg, raw_file, checkpoint_file):
                 append_jsonl(raw_file, [{"source": "msrc", "cve_id": cve,
                     "url": f"https://msrc.microsoft.com/update-guide/vulnerability/{cve}",
                     "text": "\n".join(parts)}])
+                month_count += 1
+            total_docs += month_count
+            if month_count > 0:
+                print(f"[msrc] {update_id}: {month_count}")
             done_updates.add(update_id)
             cp["msrc_done_updates"] = list(done_updates)
             save_checkpoint(checkpoint_file, cp)
             time.sleep(delay)
-    print("[msrc] Done.")
+    print(f"[msrc] Done. Total: {total_docs}")
 
 # ── Vendor Advisories ────────────────────────────────────────────
 def run_vendor_advisories(cfg, raw_file, checkpoint_file):
@@ -410,52 +430,90 @@ def run_vendor_advisories(cfg, raw_file, checkpoint_file):
     if not c.get("enabled", True): print("[vendor] Disabled."); return
     delay = c.get("delay_seconds", 1.0)
     cp = load_checkpoint(checkpoint_file)
+
+    # ── Ubuntu Security Notices ───────────────────────────────────────
+    # Endpoint: https://ubuntu.com/security/notices.json supports
+    # `offset` and `limit` (max 100 per page). The older `details=1`
+    # parameter is rejected with HTTP 422.
     if not cp.get("ubuntu_done"):
         print("[vendor] Ubuntu...")
+        ubuntu_ok = False
         try:
-            r = SESSION.get("https://ubuntu.com/security/notices.json?details=1&limit=10000", timeout=60)
-            r.raise_for_status()
-            data = r.json()
-            notices = data.get("notices", data if isinstance(data,list) else [])
-            batch = []
-            for n in notices:
-                usn = n.get("id","")
-                title = n.get("title","") or ""
-                desc = n.get("description","") or n.get("summary","") or ""
-                cves = n.get("cves",[]) or []
-                pkgs = list((n.get("packages") or {}).keys())[:10]
-                if len(desc) < 40: continue
-                parts = [f"Ubuntu Security Notice: {usn}", f"Title: {title}"]
-                if cves: parts.append(f"CVEs: {', '.join(cves[:10])}")
-                if pkgs: parts.append(f"Affected packages: {', '.join(pkgs)}")
-                parts.append(f"\n{desc}")
-                batch.append({"source": "ubuntu_advisory", "id": usn,
-                               "url": f"https://ubuntu.com/security/notices/{usn}",
-                               "text": "\n".join(parts)})
-            if batch: append_jsonl(raw_file, batch)
-            print(f"[vendor] Ubuntu: {len(batch)}")
+            offset = 0
+            page_size = 100
+            total_ubuntu = 0
+            while True:
+                r = SESSION.get(
+                    "https://ubuntu.com/security/notices.json",
+                    params={"offset": offset, "limit": page_size},
+                    timeout=60,
+                )
+                r.raise_for_status()
+                data = r.json()
+                notices = data.get("notices", data if isinstance(data, list) else [])
+                if not notices:
+                    break
+                batch = []
+                for n in notices:
+                    usn   = n.get("id", "")
+                    title = n.get("title", "") or ""
+                    desc  = n.get("description", "") or n.get("summary", "") or ""
+                    cves  = n.get("cves", []) or []
+                    pkgs  = list((n.get("packages") or {}).keys())[:10]
+                    if len(desc) < 40:
+                        continue
+                    parts = [f"Ubuntu Security Notice: {usn}", f"Title: {title}"]
+                    if cves: parts.append(f"CVEs: {', '.join(cves[:10])}")
+                    if pkgs: parts.append(f"Affected packages: {', '.join(pkgs)}")
+                    parts.append(f"\n{desc}")
+                    batch.append({"source": "ubuntu_advisory", "id": usn,
+                                   "url": f"https://ubuntu.com/security/notices/{usn}",
+                                   "text": "\n".join(parts)})
+                if batch:
+                    append_jsonl(raw_file, batch)
+                    total_ubuntu += len(batch)
+                if len(notices) < page_size:
+                    break
+                offset += page_size
+                time.sleep(delay)
+            print(f"[vendor] Ubuntu: {total_ubuntu}")
+            ubuntu_ok = True
         except Exception as e:
             print(f"[vendor] Ubuntu failed: {e}")
-        cp["ubuntu_done"] = True
-        save_checkpoint(checkpoint_file, cp)
+        # Only mark done on success — failed runs can retry later.
+        if ubuntu_ok:
+            cp["ubuntu_done"] = True
+            save_checkpoint(checkpoint_file, cp)
+
+    # ── Red Hat Security Data ──────────────────────────────────────────
+    # Endpoint moved from /labs/securitydataapi/ to /hydra/rest/securitydata/.
+    # The old path returns HTTP 404. Query params are unchanged.
     if not cp.get("redhat_done"):
         print("[vendor] Red Hat...")
+        redhat_ok = False
         try:
-            page = 0; total_rh = 0
+            page = 1  # Red Hat's API uses 1-based pagination
+            total_rh = 0
             while True:
-                r = SESSION.get("https://access.redhat.com/labs/securitydataapi/cve.json",
-                    params={"per_page":1000,"page":page}, timeout=30)
+                r = SESSION.get(
+                    "https://access.redhat.com/hydra/rest/securitydata/cve.json",
+                    params={"per_page": 1000, "page": page},
+                    timeout=30,
+                )
                 r.raise_for_status()
                 cves = r.json()
-                if not cves: break
+                if not cves:
+                    break
                 batch = []
                 for cve_entry in cves:
-                    cve = cve_entry.get("CVE","")
-                    desc = cve_entry.get("public_description","") or cve_entry.get("bugzilla_description","") or ""
-                    sev = cve_entry.get("severity","")
-                    cvss = cve_entry.get("cvss3_score","")
-                    pkgs = cve_entry.get("affected_packages",[])[:8]
-                    if len(desc) < 40: continue
+                    cve  = cve_entry.get("CVE", "")
+                    desc = (cve_entry.get("public_description", "") or
+                            cve_entry.get("bugzilla_description", "") or "")
+                    sev  = cve_entry.get("severity", "")
+                    cvss = cve_entry.get("cvss3_score", "")
+                    pkgs = cve_entry.get("affected_packages", [])[:8]
+                    if len(desc) < 40:
+                        continue
                     parts = [f"Red Hat Security: {cve}", f"Severity: {sev}"]
                     if cvss: parts.append(f"CVSS3: {cvss}")
                     if pkgs: parts.append(f"Packages: {', '.join(pkgs)}")
@@ -464,15 +522,20 @@ def run_vendor_advisories(cfg, raw_file, checkpoint_file):
                                    "url": f"https://access.redhat.com/security/cve/{cve}",
                                    "text": "\n".join(parts)})
                 if batch:
-                    append_jsonl(raw_file, batch); total_rh += len(batch)
+                    append_jsonl(raw_file, batch)
+                    total_rh += len(batch)
                 page += 1
                 time.sleep(delay)
-                if len(cves) < 1000: break
+                if len(cves) < 1000:
+                    break
             print(f"[vendor] Red Hat: {total_rh}")
+            redhat_ok = True
         except Exception as e:
             print(f"[vendor] Red Hat failed: {e}")
-        cp["redhat_done"] = True
-        save_checkpoint(checkpoint_file, cp)
+        if redhat_ok:
+            cp["redhat_done"] = True
+            save_checkpoint(checkpoint_file, cp)
+
     print("[vendor] Done.")
 
 # ── AlienVault OTX ───────────────────────────────────────────────

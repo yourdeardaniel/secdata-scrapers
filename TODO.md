@@ -1,6 +1,24 @@
 # TODO
 
 Known limitations and optional improvements. None of these are blocking —
+
+## Recently fixed
+- **arxiv-full**: was failing on every request with HTTP 429. Now has
+  exponential backoff (30s → 600s cap), a polite User-Agent identifying
+  the scraper, and only marks a search term "done" if it actually got
+  papers. Fixed in `scrapers/academic_deep.py`.
+- **Vendor (Ubuntu + Red Hat)**: Ubuntu endpoint changed to use
+  `offset`/`limit` pagination instead of `details=1`, returning 422 on
+  the old URL. Red Hat moved from `/labs/securitydataapi/` to
+  `/hydra/rest/securitydata/`, returning 404 on the old URL. Both
+  also had a "mark done even on failure" bug that prevented retries.
+  Fixed in `scrapers/misc_sources.py`.
+- **MSRC**: was hitting `/updates/{id}` with numeric months like
+  `2024-01` — but the API uses three-letter month abbreviations
+  (`2024-Jan`) AND the vulnerability data lives at `/cvrf/{id}` not
+  `/updates/{id}`. Every request 404'd, every month got marked done,
+  zero docs across all years. Fixed in `scrapers/misc_sources.py`.
+
 the scraper works fine without addressing any of them. Come back when
 you have time.
 

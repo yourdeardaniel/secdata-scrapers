@@ -24,22 +24,33 @@ SESSION.headers.update({"User-Agent": "Mozilla/5.0 (compatible; research-scraper
 
 
 def extract_pdf_text(content_bytes, max_pages=40):
-    """Extract text from PDF bytes."""
+    """Extract text from PDF bytes, robust to malformed pages."""
     try:
         import pdfplumber
-        parts = []
+        import logging
+        # Silence noisy pdfminer warnings about font metadata, encoding etc.
+        logging.getLogger("pdfminer").setLevel(logging.ERROR)
+        logging.getLogger("pdfplumber").setLevel(logging.ERROR)
+    except ImportError:
+        return ""
+
+    parts = []
+    try:
         with pdfplumber.open(io.BytesIO(content_bytes)) as pdf:
             for page in pdf.pages[:max_pages]:
-                t = page.extract_text()
-                if t:
-                    parts.append(t)
-        text = "\n".join(parts)
-        # clean up common PDF artifacts
-        text = "\n".join(line for line in text.split("\n")
-                         if len(line.strip()) > 2)
-        return text
+                # Per-page try/except — one malformed page won't kill the rest
+                try:
+                    t = page.extract_text()
+                    if t:
+                        parts.append(t)
+                except Exception:
+                    continue
     except Exception:
         return ""
+
+    text = "\n".join(parts)
+    text = "\n".join(line for line in text.split("\n") if len(line.strip()) > 2)
+    return text
 
 
 # ================================================================
@@ -48,8 +59,21 @@ def extract_pdf_text(content_bytes, max_pages=40):
 
 ARXIV_API = "http://export.arxiv.org/api/query"
 
+# arXiv's official rate limit guidance is "no more than 1 request per 3
+# seconds." In practice their gateway also gates aggressively when it sees
+# a generic python-requests User-Agent, so we send a descriptive one and
+# back off heavily on 429.
+ARXIV_HEADERS = {
+    "User-Agent": "secdata-scrapers/1.0 (https://github.com/yourdeardaniel/secdata-scrapers; research)",
+    "Accept":     "application/atom+xml",
+}
 
-def search_arxiv(query, start, max_results):
+
+def search_arxiv(query, start, max_results, max_attempts=5):
+    """
+    Query the arXiv API. Handles 429 rate limits with exponential backoff
+    and 503 transient errors with linear backoff. Returns XML text or None.
+    """
     params = {
         "search_query": f"cat:cs.CR AND ({query})",
         "start":        start,
@@ -57,13 +81,31 @@ def search_arxiv(query, start, max_results):
         "sortBy":       "submittedDate",
         "sortOrder":    "descending",
     }
-    try:
-        r = SESSION.get(ARXIV_API, params=params, timeout=30)
-        r.raise_for_status()
-        return r.text
-    except Exception as e:
-        print(f"[arxiv_full] Search failed: {e}")
-        return None
+    backoff = 30  # seconds, doubles on each 429
+    for attempt in range(1, max_attempts + 1):
+        try:
+            r = SESSION.get(ARXIV_API, params=params,
+                            headers=ARXIV_HEADERS, timeout=30)
+            if r.status_code == 429:
+                print(f"[arxiv_full] 429 (attempt {attempt}/{max_attempts}), "
+                      f"sleeping {backoff}s...")
+                time.sleep(backoff)
+                backoff = min(backoff * 2, 600)  # cap at 10 minutes
+                continue
+            if r.status_code == 503:
+                print(f"[arxiv_full] 503 transient, sleeping 60s...")
+                time.sleep(60)
+                continue
+            r.raise_for_status()
+            return r.text
+        except requests.exceptions.RequestException as e:
+            print(f"[arxiv_full] Request failed (attempt {attempt}): {e}")
+            time.sleep(10 * attempt)
+        except Exception as e:
+            print(f"[arxiv_full] Unexpected error: {e}")
+            return None
+    print(f"[arxiv_full] Giving up after {max_attempts} attempts.")
+    return None
 
 
 def parse_arxiv_entries(xml_text):
@@ -114,8 +156,9 @@ def run_arxiv_fulltext(cfg, raw_file, checkpoint_file):
         print("[arxiv_full] Disabled.")
         return
 
-    max_papers   = c.get("max_papers", 15000)
-    delay        = c.get("delay_seconds", 3.0)
+    # arXiv strongly recommends at least 3 seconds between calls; enforce it
+    # regardless of what the config says.
+    delay = max(c.get("delay_seconds", 3.0), 3.0)
     download_pdf = c.get("download_pdfs", True)
     terms        = c.get("search_terms", [])
     per_term     = max(1, max_papers // max(len(terms), 1))
@@ -130,12 +173,21 @@ def run_arxiv_fulltext(cfg, raw_file, checkpoint_file):
     for term in remaining:
         start = 0
         count = 0
+        consecutive_failures = 0
         print(f"[arxiv_full] '{term}'")
 
         while count < per_term:
             xml = search_arxiv(term, start, 50)
             if not xml:
-                break
+                consecutive_failures += 1
+                if consecutive_failures >= 2:
+                    # API is unhappy; bail on this term but DON'T mark done,
+                    # so a future run can retry it.
+                    print(f"[arxiv_full] '{term}' aborted after repeated failures.")
+                    break
+                time.sleep(30)
+                continue
+            consecutive_failures = 0
 
             entries = parse_arxiv_entries(xml)
             if not entries:
@@ -191,7 +243,10 @@ def run_arxiv_fulltext(cfg, raw_file, checkpoint_file):
             start += 50
             time.sleep(delay)
 
-        done_terms.add(term)
+        # Only mark term complete if we actually got something OR processed
+        # all available papers (empty result). Failed terms can retry later.
+        if count > 0 or consecutive_failures == 0:
+            done_terms.add(term)
         cp["arxiv_full_done"]  = list(done_ids)
         cp["arxiv_full_terms"] = list(done_terms)
         save_checkpoint(checkpoint_file, cp)
