@@ -433,14 +433,14 @@ def run_vendor_advisories(cfg, raw_file, checkpoint_file):
 
     # ── Ubuntu Security Notices ───────────────────────────────────────
     # Endpoint: https://ubuntu.com/security/notices.json supports
-    # `offset` and `limit` (max 100 per page). The older `details=1`
-    # parameter is rejected with HTTP 422.
+    # `offset` and `limit`, but limit is capped at 20 per page (higher
+    # values return HTTP 422 Unprocessable Content). Paginate accordingly.
     if not cp.get("ubuntu_done"):
         print("[vendor] Ubuntu...")
         ubuntu_ok = False
         try:
             offset = 0
-            page_size = 100
+            page_size = 20  # Ubuntu API max
             total_ubuntu = 0
             while True:
                 r = SESSION.get(

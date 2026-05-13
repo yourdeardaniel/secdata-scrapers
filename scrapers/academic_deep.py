@@ -158,6 +158,7 @@ def run_arxiv_fulltext(cfg, raw_file, checkpoint_file):
 
     # arXiv strongly recommends at least 3 seconds between calls; enforce it
     # regardless of what the config says.
+    max_papers   = c.get("max_papers", 15000)
     delay = max(c.get("delay_seconds", 3.0), 3.0)
     download_pdf = c.get("download_pdfs", True)
     terms        = c.get("search_terms", [])
