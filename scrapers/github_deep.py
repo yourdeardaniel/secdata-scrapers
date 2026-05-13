@@ -7,6 +7,7 @@ GitHub deep scraper:
 """
 import os
 import time
+import shutil
 import subprocess
 import requests
 from pathlib import Path
@@ -166,6 +167,14 @@ def run_repos(cfg, raw_file, checkpoint_file):
         )
         if docs:
             append_jsonl(raw_file, docs)
+
+        # Clean up the cloned repo to avoid filling the disk. The extracted
+        # markdown is already in raw_docs.jsonl; the clone itself is no longer
+        # needed. Without this, ~5000 repos can accumulate 100+ GB.
+        try:
+            shutil.rmtree(dest, ignore_errors=True)
+        except Exception:
+            pass
 
         done_repos.add(rid)
         cp["gh_deep_repos_done"] = list(done_repos)
